@@ -26,6 +26,7 @@ use work.Config.all;
 use ieee.math_real.all;
 use work.pkt_types_pkg.all;
 use work.eth_pkg.all;
+use work.network_config.all;
 
 
 
@@ -44,8 +45,12 @@ port (
     mosi : out std_logic;
     ss : out std_logic;
     sck : out std_logic;
-    ack_new_data : out std_logic;
+
+    --signals that the new_data_avail_signal can be deasserted and data_in changed, as the module has latched the input data
+    ack_new_data : out std_logic; 
+
     data_in : in std_logic_vector(max_packet_size_bytes*BYTE -1 downto 0); --hex data to send over eth
+    data_size_bytes : in natural range 0 to max_packet_size_bytes;
 
     pkt_id_out : out pkt_type_t := UNKNOWN; --id of command recieved over eth
     pkt_data_out : out std_logic_vector(max_packet_data_bytes*BYTE -1 downto 0); --data of command recieved over eth
@@ -75,14 +80,11 @@ architecture behavioural of max_ethernet is
 
     constant ETH_MTU : natural := 1500; --1500 bytes per ethernet frame.
     constant BYTE : natural := 8;
-
-
-    ---------------------------------------------------NETWORKING INFORMATION------------------------------------------------
+---------------------------------------------------NETWORKING INFORMATION------------------------------------------------
     
 
     -- GAR (Gateway IP Address Register) [R/W] [0x0001 ? 0x0004] [0x00]
     -- GAR configures the default gateway address. (from datasheet)
-    constant GATEWAY_IP_ADDRESS : std_logic_vector(31 downto 0) := x"C0_A8_00_01";   -- Gateway IP Address = 192.168.0.1
     type GATEWAY_ADDRESS_REGISTER_ARRAY is array (0 to 3) of std_logic_vector(15 downto 0);
     constant GATEWAY_ADDRESS_REGISTERS : GATEWAY_ADDRESS_REGISTER_ARRAY := (
         x"0001",
@@ -94,7 +96,6 @@ architecture behavioural of max_ethernet is
     
     -- SUBR (Subnet Mask Register) [R/W] [0x0005 ? 0x0008] [0x00]
     -- SUBR configures the subnet mask address. (from datasheet)
-    constant SUBNET_MASK_ADDRESS : std_logic_vector(31 downto 0) := x"FF_FF_FF_00";   -- Subnet Mask Address = 255.255.255.0
     type SUBNET_MASK_REGISTER_ARRAY is array (0 to 3) of std_logic_vector(15 downto 0);
     constant SUBNET_MASK_ADDRESS_REGISTERS : SUBNET_MASK_REGISTER_ARRAY := (
         x"0005",
@@ -106,7 +107,6 @@ architecture behavioural of max_ethernet is
     -- SHAR (Source Hardware Address Register) [R/W] [0x0009 ? 0x000E] [0x00]
     -- SHAR configures the source hardware address.
     -- Ex) In case of ?00.08.DC.01.02.03?
-    constant MAC_ADDRESS : std_logic_vector(47 downto 0) := x"00_08_DC_01_02_03";  -- MAC Address = 00.08.DC.01.02.03
     type MAC_ADDRESS_REGISTER_ARRAY is array (0 to 5) of std_logic_vector(15 downto 0);
     constant MAC_ADDRESS_REGISTERS : MAC_ADDRESS_REGISTER_ARRAY := (
         x"0009",
@@ -117,8 +117,7 @@ architecture behavioural of max_ethernet is
         x"000E"
     );
 
-    -- from previous years work
-    constant DEST_MAC_ADDRESS : std_logic_vector(47 downto 0) := x"6C_02_E0_5F_60_45";  -- MAC Address = 00.08.DC.01.02.03
+
     type DEST_MAC_ADDRESS_REGISTER_ARRAY is array (0 to 5) of std_logic_vector(15 downto 0);
     constant DEST_MAC_ADDRESS_REGISTERS : DEST_MAC_ADDRESS_REGISTER_ARRAY := (
         x"0006",
@@ -131,8 +130,6 @@ architecture behavioural of max_ethernet is
 
     -- SIPR (Source IP Address Register) [R/W] [0x000F ? 0x0012] [0x00]
     -- SIPR configures the source IP address.
-
-    constant IP_ADDRESS : std_logic_vector(31 downto 0) := x"a9feecb1";   -- IP Address = 169.254.236.177
     type IP_ADDRESS_REGISTER_ARRAY is array (0 to 3) of std_logic_vector(15 downto 0);
     constant IP_ADDRESS_REGISTERS : IP_ADDRESS_REGISTER_ARRAY := (
         x"000F",
@@ -141,8 +138,7 @@ architecture behavioural of max_ethernet is
         x"0012"
     );
 
-    constant DEST_IP_ADDRESS : std_logic_vector(31 downto 0) := x"a9feecf1";   -- Destination IP Address = 169.254.236.241
-
+    -- DIPR configures the dest IP address.
     type DEST_IP_ADDRESS_REGISTER_ARRAY is array (0 to 3) of std_logic_vector(15 downto 0);
     constant DEST_IP_ADDRESS_REGISTERS : DEST_IP_ADDRESS_REGISTER_ARRAY := (
         x"000C",
@@ -150,6 +146,7 @@ architecture behavioural of max_ethernet is
         x"000E",
         x"000F"
     );
+
     -------------------------------------------------Common Interrupt registers--------------------------------------------------
     constant INT_REGISTER : std_logic_vector(15 downto 0) := x"0015";
     constant INT_MASK_REGISTER : std_logic_vector(15 downto 0) := x"0016";
@@ -169,7 +166,6 @@ architecture behavioural of max_ethernet is
     -- Sn_PORT configures the source port number of Socket n. It is valid when Socket n is
     -- used in TCP/UDP mode. It should be set before OPEN command is ordered.
     -- Ex In case of Socket 0 Port = 8888(0x22B8), configure as below,
-    constant S0PORT_NUMBER : std_logic_vector(15 downto 0) := x"22B8";
     type S0PORT_ADDRESS_REGISTER_ARRAY is array (0 to 1) of std_logic_vector(15 downto 0);
     constant S0PORT_ADDRESS_REGISTERS : S0PORT_ADDRESS_REGISTER_ARRAY := (
         x"0004",
@@ -182,7 +178,6 @@ architecture behavioural of max_ethernet is
     -- In TCP server mode, it indicates the port number of ?TCP client? after successfully establishing connection.
     -- In UDP mode, it configures the port number of peer to be transmitted the UDP packet by SEND/SEND_MAC command.
     -- Ex In case of Socket 0 Destination Port = 5001(0x1389), configure as below,
-    constant DEST_S0PORT_NUMBER : std_logic_vector(15 downto 0) := x"1389";
     constant DEST_S0PORT_ADDRESS_REGISTERS : S0PORT_ADDRESS_REGISTER_ARRAY := (
         x"0010",
         x"0011"
@@ -251,8 +246,9 @@ architecture behavioural of max_ethernet is
 
     --int_mask_register
     constant Sn_INT_MASK_REGISTER : std_logic_vector(15 downto 0) := x"002C";
+
     --int mask such that the only thing that causes the interrupts from Sn is reception of data
-    constant Sn_RX_ONLY_INT_MASK : std_logic_vector(7 downto 0) := x"04"; --SHULD BE 04 just do this for testing
+    constant Sn_RX_ONLY_INT_MASK : std_logic_vector(7 downto 0) := x"04"; 
 
 
     --Control register commands for a socket N. (N specified by the control byte)
@@ -276,56 +272,43 @@ architecture behavioural of max_ethernet is
     constant SEND_TO_COMPUTER : std_logic_vector(31 downto 0) :=  SnCR_REGISTER & S0_CONTROL_WRITE & SnCR_SEND;
     constant RECV_COMMAND : std_logic_vector(31 downto 0) := SnCR_REGISTER & S0_CONTROL_WRITE & SnCR_RECV;
     constant hello_str : std_logic_vector(39 downto 0) := X"68656C6C6F"; --hello
-  
------------------------------------------------------------SIGNALS---------------------------------------------------
 
-    --The write pointer for socket zeroes tx buffer 
-    signal s0_tx_write_ptr : std_logic_vector(15 downto 0) := (others => '0');
+-----------------------------------------------------SPI_SIGNALS-------------------------------------------------------
     
-    --The rx write ptr
-    signal s0_rx_read_ptr : std_logic_vector(15 downto 0) :=  (others => '0');
-    --the id of the last recieved rx packet
-    signal rx_pkt_data : std_logic_vector(max_packet_data_bytes*BYTE -1 downto 0);
-    signal pkt_id : pkt_type_t;
-
-
-
-    
-    --SPI SIGNALS
-    constant spi_tx_reg_width_bytes : integer := max_packet_size_bytes + 4;
-    constant spi_rx_reg_width_bytes : integer := 2;
+    --SPI WIDTHS 
+    constant spi_tx_reg_width_bytes : integer := max_packet_size_bytes + 3; --3 for addressing and ctrl
+    constant spi_rx_reg_width_bytes : integer := pkt_id_field_size_bytes + max_packet_data_bytes;
     constant spi_tx_reg_width_bits : integer := (spi_tx_reg_width_bytes*BYTE);
     constant spi_rx_reg_width_bits : integer := (spi_rx_reg_width_bytes*BYTE);
     constant spi_tx_reg_MSB : integer := spi_tx_reg_width_bits-1;
     constant spi_rx_reg_MSB : integer := spi_rx_reg_width_bits-1;
 
 
-
-    
-
+    --SPI SIGNALS
     signal spi_tx_data_in : std_logic_vector(spi_tx_reg_MSB downto 0) := (others =>'0');
     signal spi_rx_data : std_logic_vector(spi_rx_reg_MSB downto 0) := (others=>'0');
     signal spi_bytes_to_send : integer;
     signal spi_enable : std_logic := '0';
     signal spi_active : std_logic := '0'; 
-    signal spi_active_last : std_logic:= '0';
         
+  
+-----------------------------------------------------------SIGNALS---------------------------------------------------
 
+    --The write pointer for socket zeroes tx buffer 
+    signal s0_tx_write_ptr : std_logic_vector(15 downto 0) := (others => '0');
     
+    --The rx read_ptr
+    signal s0_rx_read_ptr : std_logic_vector(15 downto 0) :=  (others => '0');
+
+    --the data contained in the last recieved packet
+    signal rx_pkt_data : std_logic_vector(max_packet_data_bytes*BYTE -1 downto 0);
+    --the id of the last recieved rx packet
+    signal pkt_id : pkt_type_t;
+
+
     signal count : integer := 0;
     signal setup_count : integer := 0;
     signal setup_done : std_logic := '0';
-
-
-    procedure SendData(signal data_to_send : in STD_LOGIC_VECTOR;
-                    signal spi_tx_buffer : in STD_LOGIC_VECTOR(spi_tx_reg_width_bits-1 downto 0);
-                    signal spi_bytes_to_send : in natural) is
-        variable lsb_data_bit_pos : natural := spi_tx_reg_width_bits - spi_bytes_to_send*BYTE;
-    begin
-        spi_bytes_to_send(spi_tx_reg_MSB downto spi)
-
-        
-    end procedure;
 
 begin
     --testbench mappings
@@ -374,29 +357,28 @@ begin
         if reset = '1' then
             state <= SETUP;
         elsif rising_edge(clk) then
-            --assign adc value bin_hex val here
             --module initialisation delay
-            if count < clk_freq/10000 then -- change to clk_freq/2 for real thing (500 ms delay)
+            if count < clk_freq/10000 then 
                 count <= count + 1;
-            --SPI is active, dont latch new data in 
+            --SPI is active, wait
             elsif spi_active = '1' then
                 spi_enable <= '0';
-
-            --we have waited one clock cycle since enabling spi
+            --spi is inactive and we have not already asserted the enable
             elsif spi_active = '0' and spi_enable = '0' then
                 case(state) is
                     when SETUP =>
                         spi_enable <= '1';
                         setup_count <= setup_count + 1;
-                        spi_bytes_to_send <= 4; --DEFAULT JUST SEND ONE BYTE ALONG WITH ADDR AND CTRL
                         spi_tx_data_in <= (others => '0');
                         case(setup_count) is
                             --set phy operation mode
                             when 0  => 
+                            spi_bytes_to_send <= 4; 
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <= PHY_CONFIGURATION_REGISTER & COMMON_REGISTER_CONTROL_WRITE_BYTE & SET_PHY_OPERATION_MODE;
 
                             --set tx buffer size
                             when 1  => 
+                            spi_bytes_to_send <= 4; 
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <= TX_BUFFER_SIZE_ADDR & S0_CONTROL_WRITE & TX_BUFFER_SIZE;
                             
                             --mac addr
@@ -491,7 +473,8 @@ begin
                              
                     
                     when IDLE =>
-                        -- WHEN NEW DATA AVAILABLE move to send state
+                        
+                        spi_tx_data_in <= (others => '0');
                         if INT = '0' then --interupt asserted data ready to receieve
                             spi_enable <= '1';
                             state <= RECIEVING;
@@ -499,36 +482,48 @@ begin
                             spi_bytes_to_send <= 5;
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <= SnRx_RECIEVED_SIZE_REG & S0_CONTROL_READ & x"0000";
                             rx_state <= CLEAR_INTERRUPT;
-                        elsif new_data_avail = '1' then
+                        elsif new_data_avail = '1' then  -- WHEN NEW DATA AVAILABLE move to send state
                             state <= SENDING;
                             tx_state <= READ_WRITE_PTR;
-                            ack_new_data <= '1';
                         end if;
 
                         
                     when SENDING =>
                         spi_enable <= '1';
                         spi_tx_data_in <= (others => '0');
-                        ack_new_data <= '0'; -- must have ack'd new data to move into send state can deassert signal
+                        
                         case (tx_state) is
-                            --READING REALLY SHOULDN'T BE NECCECARY AS WE should just keep track of the state of the pointer ourselves.
-                            --CURRENTLY always READING  0x0300 for the write ptr, unsure why
+                            --READING write pointer REALLY SHOULDN'T BE NECCECARY AS WE should just keep track of the state of the pointer ourselves.
+                            --however for consistency's sake, in accordance with the datasheet we will do it
                             when READ_WRITE_PTR =>                               
                                 spi_bytes_to_send <= 5;
                                 spi_tx_data_in(spi_tx_reg_MSB downto spi_tx_reg_width_bits - 5*BYTE) <=  SnTx_WR_PTR_ADRR & S0_CONTROL_READ & x"0000";    
                                 tx_state <= WRITE_BUFF;
                             when WRITE_BUFF =>
+                                --write pointer has ben read into spi_rx_data, latch into the s0_tx_write_ptr reg
                                 s0_tx_write_ptr <= spi_rx_data(15 downto 0);   
 
-                                spi_bytes_to_send <= 3+ max_packet_size_bytes;                           
-                                spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - ((3+max_packet_size_bytes)*BYTE)) <= s0_tx_write_ptr &  S0_TX_BUF_WRITE & data_in;
+                                --send the data to the tx buffer
+                                spi_bytes_to_send <= 3+ data_size_bytes                           
+                                spi_tx_data_in <= s0_tx_write_ptr & S0_TX_BUF_WRITE & data_in;
+
+                                --have read in data to the spi_tx_data_in reg, can signal that the data_in_signal is now safe to change 
+                                --signals that the new_data_avail_signal can be deasserted, as the module has read the input data
+                                ack_new_data <= '1';  
+                                
+                                --the write pointer needs to be updated by the amount of bytes we have read
                                 s0_tx_write_ptr <=  std_logic_vector(unsigned(s0_tx_write_ptr) + to_unsigned(max_packet_size_bytes, 16));
                                 tx_state <= WRITE_WRITE_PTR; 
-                            when WRITE_WRITE_PTR => 
+                            when WRITE_WRITE_PTR =>
+
+                                ack_new_data <= '0'; --deassert signal as it should have been detected
+
+                                --update the write ptr register in the w5500
                                 spi_bytes_to_send <= 5;
                                 spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <=  SnTx_WR_PTR_ADRR & S0_CONTROL_WRITE & s0_tx_write_ptr;
                                 tx_state <= send;
                             when send =>
+                                --Issue a send command so the w5500 sends what it's in the tx_buffer over ethernet.
                                 spi_bytes_to_send <= 4;
                                 spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <=  SEND_TO_COMPUTER;
                                 tx_state <= READ_WRITE_PTR;
@@ -541,17 +536,17 @@ begin
                         --clear interrupt
                         when CLEAR_INTERRUPT =>
                             size_recieved <= spi_rx_data(15 downto 0); --load the size recieved var
+
+                            --send the command to clear the interrupt
                             spi_bytes_to_send <= 4;
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <=  Sn_INT_REGISTER & S0_CONTROL_WRITE & x"FF";
                             rx_state <= READ_ID;
-                            
-                        
+                                           
                         when READ_ID =>
                             --issue a read for the id field
                             spi_bytes_to_send <= 3 + (pkt_id_field_size_bits/BYTE);
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - (3 + (pkt_id_field_size_bits/BYTE))*BYTE) <=  s0_rx_read_ptr & S0_RX_BUF_READ & x"00";
                            
-
                             rx_state <= UPDATE_READ_PTR_1;
 
                         when UPDATE_READ_PTR_1 =>
@@ -562,9 +557,12 @@ begin
                             --send updated ptr to the register
                             spi_bytes_to_send <= 5;
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <=  SnRx_RD_PTR_REG & S0_CONTROL_WRITE & s0_rx_read_ptr;
-                            rx_state <= READ_DATA;
+                            rx_state <= SEND_RECV;
                         when SEND_RECV =>
-                            
+                            --issue a RECV COMMAND AS PER THE DATASHEET 
+                            spi_bytes_to_send <= 4;
+                            spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <=  RECV_COMMAND;
+                            rx_state <= READ_DATA;
                         when READ_DATA =>
                             --depending on the id field read a different number of corresponding bytes as each
                             --command will have different byte length depending on id

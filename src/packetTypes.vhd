@@ -9,8 +9,10 @@ use ieee.math_real.all;
 --but allowances should probably be made for this in the future
 package pkt_types_pkg is
     type pkt_type_t is (HELLO,SEG_DISPLAY_DATA,UNKNOWN);
-    constant pkt_id_field_size_bits : integer := 8; 
-    constant max_packet_data_bytes : integer := 2; --maximum size of hte pkt_data_field
+    constant pkt_id_field_size_bytes : integer := 1; 
+    constant pkt_id_field_size_bits : integer := pkt_id_field_size_bytes*8;
+
+    constant max_packet_data_bytes : integer := 2; --maximum size of the pkt_data_field
 
     --constants for fields of individual packets 
     constant HELLO_pkt_size_bytes : integer := 0; --how many bytes of data after the header
