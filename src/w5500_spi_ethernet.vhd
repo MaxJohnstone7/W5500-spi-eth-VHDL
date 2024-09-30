@@ -40,6 +40,8 @@ port (
     reset : in std_logic;
     clk : in std_logic;
     new_data_avail : in std_logic;
+    
+    --spi
     miso : in std_logic;
     int : in std_logic; --interupt pin for the wiznet module to signal data recieved
     mosi : out std_logic;
@@ -78,7 +80,6 @@ architecture behavioural of max_ethernet is
    
     signal tx_state : eth_tx_state_t := READ_WRITE_PTR;
 
-    constant ETH_MTU : natural := 1500; --1500 bytes per ethernet frame.
     constant BYTE : natural := 8;
 ---------------------------------------------------NETWORKING INFORMATION------------------------------------------------
     
@@ -605,13 +606,13 @@ begin
 
                        
                             --Currently per interrupt assertion we only read one packets worth of data
-                            --
-                            --check how many bytes there are to read
+                            --If multiple packets were sent before we processed one we will be one behind in the buffer
 
-                            
+                            --if there is still more, to read (bytes_read < size_received) go back to the READ_ID_STATE
 
-                            --if there is still more, stay in recieve state
-                            --go to read_id state
+
+                            --ALSO IF BYTES OF GARBAGE WAS RECIEVED(invalid id field) we should move the read pointer forward
+                            --SKIPPING THE BYTES RECIEVED AFTER THE INVALID ID FIELD  such that we are back to reading fresh data
 
                             --if there are no more commands to be read go back to idle
                             state <= IDLE;
