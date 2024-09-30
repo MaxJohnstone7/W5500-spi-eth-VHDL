@@ -595,8 +595,7 @@ begin
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <=  SnRx_RD_PTR_REG & S0_CONTROL_WRITE & s0_rx_read_ptr;
                             rx_state <= WRITE_OUT;
                         when WRITE_OUT =>
-                            --NOTE POSSIBLY NEED A CHECK TO SEE WETHER THE PREVIOUS COMMAND IS DONE PROCESSING
-                            --BEFORE ASSERTING OUTPUT
+                            
                             pkt_id_out <= pkt_id; 
                             pkt_data_out <= rx_pkt_data;
 
@@ -605,7 +604,10 @@ begin
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <=  RECV_COMMAND;
 
                        
+                            --Currently per interrupt assertion we only read one packets worth of data
+                            --
                             --check how many bytes there are to read
+
                             
 
                             --if there is still more, stay in recieve state

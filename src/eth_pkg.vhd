@@ -1,4 +1,7 @@
---PACKAGE THESE TYPES SO TESTBENCH CAN USE THEM
+--THIS PACKAGE EXISTS TO ALLOW MODULES WHICH PROVIDE INPUT TO THE w5500_eth_module to
+--cast their data to a valid data_in input vector and acess the debug state types provided
+--as outputs by the module.
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -17,7 +20,7 @@ end package;
 package body w5500_pkg is
 
 function data_slv_to_valid_eth_input (data_size_bytes : natural; data : std_logic_vector ) return std_logic_vector is
-    variable result : std_logic_vector(MAX_ETH_DATA_SIZE-1 downto 0);
+    variable result : std_logic_vector(MAX_ETH_DATA_SIZE-1 downto 0) := (others=> '0');
 begin
     result(MAX_ETH_DATA_SIZE-1 downto MAX_ETH_DATA_SIZE-data_size_bytes*BYTE) := data;
     return result;
