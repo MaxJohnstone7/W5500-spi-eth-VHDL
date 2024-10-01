@@ -24,6 +24,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.Config.all;
 use ieee.math_real.all;
+
 use work.pkt_types_pkg.all;
 use work.eth_pkg.all;
 use work.network_config.all;
@@ -477,12 +478,8 @@ begin
                         
                         spi_tx_data_in <= (others => '0');
                         if INT = '0' then --interupt asserted data ready to receieve
-                            spi_enable <= '1';
                             state <= RECIEVING;
-                            --GET THE SIZE RECIEVED
-                            spi_bytes_to_send <= 5;
-                            spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <= SnRx_RECIEVED_SIZE_REG & S0_CONTROL_READ & x"0000";
-                            rx_state <= CLEAR_INTERRUPT;
+                            rx_state <= GET_SIZE_RECIEVED;
                         elsif new_data_avail = '1' then  -- WHEN NEW DATA AVAILABLE move to send state
                             state <= SENDING;
                             tx_state <= READ_WRITE_PTR;
@@ -534,6 +531,11 @@ begin
                     when RECIEVING =>
                     spi_enable <= '1';
                     case (rx_state) is 
+                        when GET_SIZE_RECIEVED =>
+                            --GET THE SIZE RECIEVED
+                            spi_bytes_to_send <= 5;
+                            spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <= SnRx_RECIEVED_SIZE_REG & S0_CONTROL_READ & x"0000";
+                            rx_state <= CLEAR_INTERRUPT;
                         --clear interrupt
                         when CLEAR_INTERRUPT =>
                             size_recieved <= spi_rx_data(15 downto 0); --load the size recieved var
