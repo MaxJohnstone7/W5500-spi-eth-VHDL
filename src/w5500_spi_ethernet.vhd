@@ -16,7 +16,6 @@
 ----------------------------------------------------------------------------------
 
 
---PACKAGE THESE TYPES SO TESTBENCH CAN USE THEM
 
 
 library ieee;
@@ -35,7 +34,7 @@ entity w5500_spi_ethernet is
 generic (
     clk_freq : integer := 100_000_000;
     spi_freq : integer := 15_000_000;
-    max_packet_size_bytes : integer range 0 to MAX_ETH_DATA_SIZE := 100;
+    max_packet_size_bytes : integer range 0 to MAX_ETH_DATA_SIZE := 100
 );
 port (
     reset : in std_logic;
@@ -62,8 +61,6 @@ port (
     -- modelsim has a way of "spying" however the vivado simulator does not)
     -- https://stackoverflow.com/questions/35189588/vhdl-testbench-internal-signals
     -- https://support.xilinx.com/s/question/0D52E00006hpbfKSAQ/monitor-signal-in-test-bench-of-the-unit-under-test?language=en_US
-    write_ptr : out std_logic_vector(15 downto 0);
-    size_recieved : out std_logic_vector(15 downto 0) := x"FFFF";
     pkt_id_bits : out std_logic_vector(7 downto 0);
     state_d : out eth_state_t;
     tx_state_d : out eth_tx_state_t;
@@ -81,7 +78,6 @@ architecture behavioural of max_ethernet is
    
     signal tx_state : eth_tx_state_t := READ_WRITE_PTR;
 
-    constant BYTE : natural := 8;
 ---------------------------------------------------NETWORKING INFORMATION------------------------------------------------
     
 
@@ -302,6 +298,9 @@ architecture behavioural of max_ethernet is
     --The rx read_ptr
     signal s0_rx_read_ptr : std_logic_vector(15 downto 0) :=  (others => '0');
 
+    --size received
+    signal size_recieved : integer := 0;
+
     --the data contained in the last recieved packet
     signal rx_pkt_data : std_logic_vector(max_packet_data_bytes*BYTE -1 downto 0);
     --the id of the last recieved rx packet
@@ -312,9 +311,10 @@ architecture behavioural of max_ethernet is
     signal setup_count : integer := 0;
     signal setup_done : std_logic := '0';
 
+
 begin
+
     --testbench mappings
-    write_ptr <= s0_tx_write_ptr;
     state_d <= state;
     tx_state_d <= tx_state;
     rx_state_d <= rx_state;
@@ -355,6 +355,7 @@ begin
 
     ethernet_stuff : process(clk)
         variable pkt_data_size_bytes : integer; --stores amount of bytes corresponding to the recieved pkt type
+        variable bytes_read : natural := 0; --amount of bytes read 
     begin
         if reset = '1' then
             state <= SETUP;
@@ -502,7 +503,7 @@ begin
                                 s0_tx_write_ptr <= spi_rx_data(15 downto 0);   
 
                                 --send the data to the tx buffer
-                                spi_bytes_to_send <= 3+ data_size_bytes                           
+                                spi_bytes_to_send <= 3+ data_size_bytes ;                         
                                 spi_tx_data_in <= s0_tx_write_ptr & S0_TX_BUF_WRITE & data_in;
 
                                 --have read in data to the spi_tx_data_in reg, can signal that the data_in_signal is now safe to change 
@@ -531,14 +532,14 @@ begin
                     when RECIEVING =>
                     spi_enable <= '1';
                     case (rx_state) is 
-                        when GET_SIZE_RECIEVED =>
-                            --GET THE SIZE RECIEVED
+                        --GET THE SIZE of data RECIEVED
+                        when GET_SIZE_RECIEVED =>       
                             spi_bytes_to_send <= 5;
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 5*BYTE) <= SnRx_RECIEVED_SIZE_REG & S0_CONTROL_READ & x"0000";
                             rx_state <= CLEAR_INTERRUPT;
                         --clear interrupt
                         when CLEAR_INTERRUPT =>
-                            size_recieved <= spi_rx_data(15 downto 0); --load the size recieved var
+                            size_recieved <= to_integer(to_unsigned(spi_rx_data(15 downto 0),16)); --load the size recieved var
 
                             --send the command to clear the interrupt
                             spi_bytes_to_send <= 4;
@@ -567,31 +568,31 @@ begin
                             spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 4*BYTE) <=  RECV_COMMAND;
                             rx_state <= READ_DATA;
                         when READ_DATA =>
-                            --depending on the id field read a different number of corresponding bytes as each
-                            --command will have different byte length depending on id
-                            
-                            --set the amount of bytes to read based on the pkt_id
 
-                            case (pkt_id) is
-                                when HELLO =>
-                                    pkt_data_size_bytes := HELLO_pkt_size_bytes; 
-                                    spi_bytes_to_send <= 3 + HELLO_pkt_size_bytes;
-                                when others =>
-                                    pkt_data_size_bytes := 0;
-                                    spi_bytes_to_send <= 3;
-                            end case;
-                                
-                            --READ IN the packets data
-                            spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 3*BYTE) <=  s0_rx_read_ptr & S0_RX_BUF_READ;
+                            --if the packet id is invalid
+                            --skip all subsequent bytes that have been recieved as we can't use them
+                            if (pkt_Id = UNKNOWN) then
+                                pkt_data_size_bytes := size_recieved-1;
+                                --we just move to updating the read pointer, dont waste time actually reading the bytes
+                            else 
+                                pkt_data_size_bytes :=  pkt_id_to_data_byte_size(pkt_id);
+
+                                --set the amount of bytes to read based on the pkt_id
+                                spi_bytes_to_send <= pkt_id_to_data_byte_size(pkt_id) + 3; --3 for addressing and control phase
+                                --READ IN the packets data
+                                spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 3*BYTE) <=  s0_rx_read_ptr & S0_RX_BUF_READ ;
+                            end if;
+;
                     
                             rx_state <= UPDATE_READ_PTR_2;
                         
                         when UPDATE_READ_PTR_2 =>
-                            --read in recieved data
+                            --If the packet type has data field read in recieved data
                             if pkt_data_size_bytes >=1 then
                                 rx_pkt_data(pkt_data_size_bytes*BYTE -1 downto 0) <= spi_rx_data(pkt_data_size_bytes*BYTE -1 downto 0);
                             end if;
 
+                            --update the read pointer
                             s0_rx_read_ptr <=std_logic_vector(unsigned(s0_rx_read_ptr) + to_unsigned(pkt_data_size_bytes, 16));
                             --send updated ptr to the register
                             spi_bytes_to_send <= 5;
@@ -609,12 +610,17 @@ begin
                        
                             --Currently per interrupt assertion we only read one packets worth of data
                             --If multiple packets were sent before we processed one we will be one behind in the buffer
+                            
 
-                            --if there is still more, to read (bytes_read < size_received) go back to the READ_ID_STATE
+                            --if there is still more data to read go back to the READ_ID_STATE
+                            if (pkt_data_size_bytes+pkt_data_size_bytes < size_recieved) then
 
+                                size_recieved <= size_recieved - bytes_read; --decrement size_recieved to give bytes left to read
 
-                            --ALSO IF BYTES OF GARBAGE WAS RECIEVED(invalid id field) we should move the read pointer forward
-                            --SKIPPING THE BYTES RECIEVED AFTER THE INVALID ID FIELD  such that we are back to reading fresh data
+                                rx_state <= READ_ID;  --there are more commands to be read go back to read id
+                            else 
+                                state <= IDLE; --there are no more commands to be read go back to idle
+                            end if;
 
                             --if there are no more commands to be read go back to idle
                             state <= IDLE;
