@@ -1,5 +1,8 @@
 --THE NETWORKING CONFIG DESIRED FOR USE IN THE W5500, UP TO THE USER TO CHANGE
 --THE CURRENT IMPLEMENTATION TRANSMITS TO ONE PORT ONLY AND RECIEVES FROM ONE PORT ONLY USING UDP
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 package network_config is 
 
     constant GATEWAY_IP_ADDRESS : std_logic_vector(31 downto 0) := x"C0_A8_00_01";   -- Gateway IP Address = 192.168.0.1

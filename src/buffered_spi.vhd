@@ -50,7 +50,7 @@ entity buffered_spi is
             spi_rx_data_out : out std_logic_vector(spi_rx_reg_width_bytes*8 - 1 downto 0);
 
             --determines how many times to shift the spi_tx_vector.
-            bytes_to_send : in integer range 0 to (spi_tx_reg_width_bytes*BYTE -1);
+            bytes_to_send : in integer range 0 to (spi_tx_reg_width_bytes*8 -1);
 
             --wether SPI is currnetly transmittiing
             spi_active : out std_logic

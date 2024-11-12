@@ -21,11 +21,9 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-use work.Config.all;
 use ieee.math_real.all;
-
 use work.pkt_types_pkg.all;
-use work.eth_pkg.all;
+use work.w5500_pkg.all;
 use work.network_config.all;
 
 
@@ -68,7 +66,7 @@ port (
 );
 end w5500_spi_ethernet;
 
-architecture behavioural of max_ethernet is
+architecture behavioural of w5500_spi_ethernet is
 
     
     signal state : eth_state_t := SETUP;
@@ -323,7 +321,6 @@ begin
     buffered_spi_inst : ENTITY work.buffered_spi
     generic map (CLK_FREQ => clk_freq,
             SPI_FREQ => spi_freq,
-            CPHA =>  '0',
             CPOL => '0',
             -- determines how many byte can be passed at once to the SPI module
             -- for writing
@@ -582,7 +579,6 @@ begin
                                 --READ IN the packets data
                                 spi_tx_data_in(spi_tx_reg_MSB downto  spi_tx_reg_width_bits - 3*BYTE) <=  s0_rx_read_ptr & S0_RX_BUF_READ ;
                             end if;
-;
                     
                             rx_state <= UPDATE_READ_PTR_2;
                         

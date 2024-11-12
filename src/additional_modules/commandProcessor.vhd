@@ -1,7 +1,6 @@
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use work.Config.all;
 USE ieee.numeric_std.all;
 use work.pkt_types_pkg.all;
 use work.sev_seg_pkg.all;

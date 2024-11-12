@@ -18,7 +18,7 @@ package pkt_types_pkg is
 
 
     type pkt_type_t is (HELLO,SEG_DISPLAY_DATA,UNKNOWN); --add your packet types here
-
+    constant byte : natural := 8;
     constant pkt_id_field_size_bytes : integer := 1; 
 
 
@@ -33,7 +33,7 @@ package pkt_types_pkg is
 
 
     function pkt_id_bits_to_pkt_type(bits: std_logic_vector(pkt_id_field_size_bits-1 downto 0)) return pkt_type_t;
-    function pkt_id_to_bit(pkt_id: pkt_type_t) return std_logic_vector ;
+    function pkt_id_to_bits(pkt_id: pkt_type_t) return std_logic_vector ;
     function pkt_id_to_data_byte_size(pkt_id : pkt_type_t) return natural;
 end package pkt_types_pkg;
 
@@ -49,16 +49,16 @@ package body pkt_types_pkg is
             when others => return 0; 
         end case;
 
-    end function 
+    end function ;
 
     function pkt_id_bits_to_pkt_type(bits: std_logic_vector(pkt_id_field_size_bits-1 downto 0)) return pkt_type_t is
-        variable temp_integer : to_integer(to_unsigned(bits,bits'length));
+        variable temp_integer : integer := to_integer(unsigned(bits));
     begin
         return pkt_type_t'VAL(temp_integer); 
     end function;
 
-    function pkt_id_to_bit(pkt_id: pkt_type_t) return std_logic_vector is 
-        variable temp_integer : integer := pkt_id'POS(pkt_type_t) --cast to integer
+    function pkt_id_to_bits(pkt_id: pkt_type_t) return std_logic_vector is 
+        variable temp_integer : integer := integer(pkt_type_t'POS(pkt_id)); -- cast position of pkt_id to integer
     begin
         --cast integer to SLV
         return std_logic_vector(to_unsigned(temp_integer, pkt_id_field_size_bits)); 
